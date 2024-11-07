@@ -14,8 +14,8 @@ K=[]
 for i in range(1,N+1):
   for j in range(i+1):
     K.append([j,i-j])
-K=[[0,1],[1,0],[1,1],[2,1],[1,2],[0,2],[2,0],[3,0],[0,3],[1,3],[3,1],[2,2],[0,4],[4,0]] # (14,2)
-K = nn.Parameter(torch.Tensor(K)[:,None,None,:].repeat(1,5,40,1), requires_grad=False) # (output_dim, batchsize, num_points, x-y)
+K=[[1,1],[2,1],[1,2],[0,2],[2,0],[3,0],[0,3],[1,3],[3,1],[2,2],[0,4],[4,0]] # (14,2)
+K = nn.Parameter(torch.Tensor(K)[:,None,None,:].repeat(1,5,100,1), requires_grad=False) # (output_dim, batchsize, num_points, x-y)
 
 
 ## 采样步数
@@ -49,6 +49,7 @@ def Euler_Maruyama_sampler(score_model,
   with torch.no_grad():
     c=len(time_steps)
     for time_step in time_steps: 
+      # print(c)
       # Interplote the drift function. drfit with shape (batchsize, x-vel, y-vel, x-y), 128 grids on x \in [0,pi]
       velx=[]
       vely=[]
@@ -56,21 +57,25 @@ def Euler_Maruyama_sampler(score_model,
         velxb=[]
         velyb=[]
         for j in range(x.shape[1]):
-          # velxb.append(drift[i,c,int(x[i,j,0]/(np.pi/128)),int(x[i,j,1]/(np.pi/128)),0])
-          # velyb.append(drift[i,c,int(x[i,j,0]/(np.pi/128)),int(x[i,j,1]/(np.pi/128)),1])
-          velxb.append(0)
-          velyb.append(0)
+          # print(x[i,j,0])
+          velxb.append(drift[i,c,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,0])
+          velyb.append(drift[i,c,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,1])
+          # velxb.append(0)
+          # velyb.append(0)
         velx.append(velxb)
         vely.append(velyb) 
-      vel=torch.cat([torch.Tensor(np.array(velx))[:,:,None],torch.Tensor(np.array(vely))[:,:,None]],dim=2).to(device) # [1,100,2]
-      
+      vel=torch.cat([torch.Tensor(np.array(velx))[:,:,None],torch.Tensor(np.array(vely))[:,:,None]],dim=2).to(device) # [5,100,2]
+  
+      # Poiseuille flow
       # vel=torch.cat([(1-x[:,:,1]**2)[:,:,None],(torch.zeros_like(x[:,:,0]))[:,:,None]],dim=-1).to(device)
 
       # Calculate the mean x
-      g = float(np.sqrt(diffusivity))
+      g = float(np.sqrt(2*diffusivity))
       score=score_model(x, time_step, mode)
+      # print(score[2,0])
       mean_x = x + ((g**2) * score - vel) * step_size
       x = mean_x + torch.sqrt(step_size) * g * torch.randn_like(x)  # Noise Term
+      # print(x[2,0])
       # x = mean_x
       samples.append(mean_x)
       c=c-1
@@ -90,12 +95,13 @@ class GaussianFourierProjection(nn.Module):
 
 
 def invariant(x):
-  x_mean=torch.mean(x,dim=1)[None, :, None, :].repeat(14, 1, x.shape[1],1) #[output_dim, batchsize, input_dim, 2]
-  x=x[None,:,:,:].repeat(14, 1, 1,1) # (32,5,40,2)
-  x=x-x_mean
+  x_mean=torch.mean(x,dim=1)[None, :, None, :] #[1, batchsize, 1, 2]
+  x=x[None,:,:,:].repeat(12, 1, 1,1) # (32,5,40,2)
+  x=x-x_mean.repeat(12, 1, x.shape[2],1) #[output_dim, batchsize, input_dim, 2]
   x=torch.pow(x,K) # [output_dim, batchsize, input_dim, 2]
   x=torch.sum(x[:,:,:,0]*x[:,:,:,1],dim=-1) # [output_dim, batchsize]
   x=x.permute(1,0)
+  x=torch.cat([x,x_mean[0,:,0,:]],dim=-1)
   return x
 
 
@@ -115,13 +121,14 @@ class InvarianceEncoding(nn.Module):
       x:Input with shape [batchsize, input_dim, 2]  (5,40,2)
       mode: Fourier or Moment
     """
-    x_mean=torch.mean(x,dim=1)[None, :, None, :].repeat(self.od, 1, x.shape[1],1) #[output_dim, batchsize, input_dim, 2]
-    x=x[None,:,:,:].repeat(self.od, 1, 1,1) # (32,5,40,2)
-    x=x-x_mean
+    x_mean=torch.mean(x,dim=1)[None, :, None, :] #[1, batchsize, 1, 2]
+    x=x[None,:,:,:].repeat(self.od-2, 1, 1,1) # (32,5,40,2)
+    x=x-x_mean.repeat(self.od-2, 1, x.shape[2],1) #[output_dim, batchsize, input_dim, 2]
     if mode=="Moment":
       x=torch.pow(x, self.K) # [output_dim, batchsize, input_dim, 2]
       x=torch.sum(x[:,:,:,0]*x[:,:,:,1],dim=-1) # [output_dim, batchsize] (32,5)
       x=x.permute(1,0)
+      x=torch.cat([x,x_mean[0,:,0,:]],dim=-1)
     elif mode=="Fourier":
       x=x*self.K  # [output_dim, batchsize, input_dim, 2]
       x=torch.sum(torch.cos(x[:,:,:,0]+x[:,:,:,1]),dim=-1) # [output_dim, batchsize]
@@ -173,6 +180,7 @@ class ScoreNet_embedding(nn.Module):
     m=self.sym(x, mode)  #(5,32)
     h=self.linear_model1(m)
     h=self.linear_model2(h+self.embed(t).repeat(m.shape[0],1))/np.sqrt(self.diff*t)
+    # h=self.linear_model2(h)/np.sqrt(self.diff*t)
     # print(h.shape) # (5,32)
     h=h[:,None,:]
     jac=self.sym.reverse(x) # (5,32,40,2)

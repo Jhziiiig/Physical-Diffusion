@@ -8,7 +8,6 @@ from scipy.stats import gaussian_kde
 from torch.utils.data import DataLoader,Dataset,random_split
 
 
-
 def sample_points_2DHIT(N_points, diffusivity, time_series, shift, velocity_index):
     # Be mindful that your time_series must be dense enough, otherwise the
     # simulation could blow up and give weird results
@@ -22,13 +21,18 @@ def sample_points_2DHIT(N_points, diffusivity, time_series, shift, velocity_inde
     xx = xx + dx / 2
     # Recommended value for diffusivity = 1/500;
     # initialization
-    data = sio.loadmat(f"D:/浏览器下载/2Dscalar/recordinguv{velocity_index}.mat")
+    data = sio.loadmat(f"/home/junhao/CVPR25/Velocity/recordinguv{velocity_index}.mat")
     U_rec = data['U_rec']
     V_rec = data['V_rec']
-    # vel=[]
+
+    # U_rec=np.zeros((128,128,401))
+    # V_rec=np.zeros((128,128,401))
+    vel=[]
     vel=np.vstack([U_rec[None,:],V_rec[None,:]])
-    vel=np.zeros_like(vel)
+
+    # vel=np.zeros_like(vel)
     # print(vel.shape)
+
     locations = np.repeat(starting_location[:, np.newaxis], N_points, axis=1)
     locations = np.expand_dims(locations, axis=2)
 
@@ -55,10 +59,11 @@ def sample_points_2DHIT(N_points, diffusivity, time_series, shift, velocity_inde
 
         velocity = np.array([velocity_x, velocity_y])
         # vel.append(velocity)
-        # new_locations = locations[:, :, -1] + velocity * dt + np.sqrt(2 * diffusivity) * np.random.randn(*locations[:, :, -1].shape) * np.sqrt(dt)
+        new_locations = locations[:, :, -1] + velocity * dt + np.sqrt(2 * diffusivity) * np.random.randn(*locations[:, :, -1].shape) * np.sqrt(dt)
         
-        new_locations = locations[:, :, -1] + np.sqrt(2 * diffusivity) * np.random.randn(*locations[:, :, -1].shape) * np.sqrt(dt)
-        # new_locations[:,0]=new_locations[:,0]+dt*(1-locations[:,1,-1]**2)
+        # new_locations = locations[:, :, -1] + np.sqrt(2 * diffusivity) * np.random.randn(*locations[:, :, -1].shape) * np.sqrt(dt)
+        # Poiseuille flow
+        # new_locations[0,:]=new_locations[0,:]+dt*(1-locations[1,:,-1]**2)
 
         locations = np.concatenate((locations, new_locations[:, :, np.newaxis]), axis=2)
 
@@ -116,7 +121,7 @@ class Loader(Dataset):
         data=data[None,:]
         vel=vel[None,:]
         for i in range(1,datasize):
-            # point,spe=sample_points_2DHIT(N_points, diffusivity, time_series, shift, i+1)
+            # point,spe=sample_points_2DHIT(N_points, diffusivity, time_series, shift, 1+i)
             point,spe=sample_points_2DHIT(N_points, diffusivity, time_series, shift, 1)
             data=np.vstack([data,point[None,:]])
             vel=np.vstack([vel,spe[None,:]])

@@ -96,17 +96,19 @@ def APloss_fn(model, x, x_ref, diff, drift, t, mode):
     velxb=[]
     velyb=[]
     for j in range(x.shape[1]):
-      velxb.append(drift[i,int(x[i,j,0]/(np.pi/128)),int(x[i,j,1]/(np.pi/128)),0])
-      velyb.append(drift[i,int(x[i,j,0]/(np.pi/128)),int(x[i,j,1]/(np.pi/128)),1])
+      # velxb.append(drift[i,int(x[i,j,0]/(np.pi/128)),int(x[i,j,1]/(np.pi/128)),0])
+      # velyb.append(drift[i,int(x[i,j,0]/(np.pi/128)),int(x[i,j,1]/(np.pi/128)),1])
+      velxb.append(drift[i,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,0])
+      velyb.append(drift[i,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,1])
     velx.append(velxb)
     vely.append(velyb) 
-  vel=torch.cat([torch.Tensor(velx)[:,:,None],torch.Tensor(vely)[:,:,None]],dim=2).to(device) # [1,100,2]
-
+  vel=torch.cat([torch.Tensor(velx)[:,:,None],torch.Tensor(vely)[:,:,None]],dim=2).to(device) # [5,100,2]
+  # Poiseuille flow
   # vel=torch.cat([(1-x[:,:,1]**2)[:,:,None],(torch.zeros_like(x[:,:,0]))[:,:,None]],dim=-1).to(device)
 
-  std = np.sqrt(diff) # number
+  std = np.sqrt(2*diff) # number
   score = model(x, t, mode)
-  x_exp=x-(vel-(std**2)*score)*0.01 + torch.sqrt(0.01) * std * torch.randn_like(x)
+  x_exp=x-(vel-(std**2)*score)*0.01 + torch.sqrt(torch.Tensor([0.01]).to(device)) * std * torch.randn_like(x)
 
   loss=torch.mean(torch.sum(((x_ref-x_exp))**2,dim=1),dim=0)
   cov=0
