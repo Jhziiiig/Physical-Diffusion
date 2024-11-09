@@ -57,12 +57,15 @@ def dplot(df,mode,time,batch,epoch):
   df=np.array(df)
   x=df[:,0]
   y=df[:,1]
-
+  # print(np.max(x))
+  # print(np.min(x))
+  # print(np.max(y))
+  # print(np.min(y))
   # plt.scatter(df[:, 0], df[:, 1], s=10, c='blue', label='Data')
   # x, y = np.mgrid[mean[0]-3*np.sqrt(cov[0,0]):mean[0]+3*np.sqrt(cov[0,0]):.01, 
   #                 mean[1]-3*np.sqrt(cov[1,1]):mean[1]+3*np.sqrt(cov[1,1]):.01]
   # xx, yy = np.mgrid[-2.3:0.3:.05,-1.5:1.5:.05]
-  xx, yy = np.mgrid[-0.5:1.5:.05,-0.8:0.8:.05]
+  xx, yy = np.mgrid[1:3:.05,3:6:.05]
   positions = np.vstack([xx.ravel(), yy.ravel()])
   values = np.vstack([x, y])
   kernel = gaussian_kde(values)
@@ -74,7 +77,7 @@ def dplot(df,mode,time,batch,epoch):
   plt.xlabel("")
   plt.ylabel("")
   # plt.axis("equal")
-  plt.savefig(f"PDF/100/lr3_Poi_e{epoch}/{mode}-{time}-{batch}.png")
+  plt.savefig(f"PDF/100/lr3_Vel_e{epoch}/{mode}-{time}-{batch}.png")
   # plt.show()
   plt.close()
 
@@ -118,77 +121,67 @@ np.random.seed(60)  # fixed 60
 # Data Setting
 datasize=5
 N_points=100
-diffusivity=0.01
-time_series= np.arange(0, 1.01, 0.01)
-# shift = [-np.pi / 2, -np.pi / 2]
-shift = [0,0]
-data=Loader(datasize, N_points, diffusivity, time_series, shift)
+kappa=0.002
+time_series= np.arange(0, 1.0, 0.0025)
+data=Loader(datasize, N_points)
 data_loader = DataLoader(data, batch_size=batch_size, shuffle=True)
 
-# dplot(data.data.reshape(data.data.shape[1],-1,data.data.shape[3])[-50,:,:],"Theor",-1,0)  
-# for i in [1,10,20,30,40,50,60,70,80,90,99]:
-#   dplot(data.data[0,i,:,:],"Theor",i,0,40)
 
 # Model
-score_model = ScoreNet_embedding(diff=diffusivity)
+score_model = ScoreNet_embedding(diff=kappa)
 score_model = score_model.to(device)
 
 # Inference
-epochs=[40]
-# timehook=[1,10,50,70,99]
-timehook=[i+1 for i in range(98)]
+epochs=[20,30]
+timehook=[10,50,70,99, 200,300,399]
+# timehook=[i+1 for i in range(98)]
 for epoch in epochs:
   varx_l=[]
   vary_l=[]
   meanx_l=[]
   meany_l=[]
   
-  path=f"PDF/100/lr3_Gau_e{epoch}/"
+  path=f"PDF/100/lr3_Vel_e{epoch}/"
   os.makedirs(path,exist_ok=True)
-  # ckpt = torch.load(f'ckpt/100/1e-3-Poi/ckpt_{epoch}.pth', map_location=device)
-  ckpt = torch.load('/home/junhao/CVPR25/ckpt/Gaussian-lr1e-3-epoch20.pth',map_location=device)
+  ckpt = torch.load(f'ckpt/100/1e-3-Vel/ckpt_{epoch}.pth', map_location=device)
+  # ckpt = torch.load('/home/junhao/CVPR25/ckpt/Gaussian-lr1e-3-epoch20.pth',map_location=device)
   score_model.load_state_dict(ckpt)
   sample_batch_size = 5
   sampler = Euler_Maruyama_sampler 
 
   ## Generate samples using the specified sampler.
   samples = sampler(score_model,
-                    torch.Tensor(data.data[:,-1,:,:]),  # init data
-                    data.vel,
+                    torch.Tensor(data.X[:,:,:,-1]).permute(0,2,1),  # init data
+                    torch.Tensor(data.Ub+data.Up).permute(0,3,2,1),
                     mode,
-                    diffusivity,
+                    kappa,
                     sample_batch_size, 
+                    time_series[::-1],
                     device=device)
   # samples=samples_1
   for i in timehook:
     sample=samples[-i][0,:,:].cpu()
     # 计算Variance, Mean, Covariance
-    varx=torch.var(torch.Tensor(data.data[0,i,:,0]),dim=0)  
-    # gauplot(data.data[0,i,:,:],"Theor",i,0,epoch)  
+    varx=torch.var(torch.Tensor(data.X[0,0,:,i]),dim=0)  
+    dplot(data.X[0,:,:,i].T,"Theor",i,0,epoch)  
 
     for j in range(len(data)):
-      #Plot
-      # dplot(data.data[j,i,:,:],"Theor",i,j)
-      #
       try:
-        if abs(cov)<abs(torch.cov(torch.Tensor(data.data[j,i,:,:].T))):
-          cov=torch.cov(torch.Tensor(data.data[j,i,:,:].T))
+        if abs(cov)<abs(torch.cov(torch.Tensor(data.X[j,:,:,i].T))):
+          cov=torch.cov(torch.Tensor(data.X[j,:,:,i].T))
       except:
-        cov=torch.cov(torch.Tensor(data.data[j,i,:,:].T))
-    meanx=torch.mean(torch.Tensor(data.data[0,i,:,0]))
-    vary=torch.var(torch.Tensor(data.data[0,i,:,1]),dim=0)
-    meany=torch.mean(torch.Tensor(data.data[0,i,:,1]))
+        cov=torch.cov(torch.Tensor(data.X[j,:,:,i].T))
+    meanx=torch.mean(torch.Tensor(data.X[0,0,:,i]))
+    vary=torch.var(torch.Tensor(data.X[0,1,:,i]),dim=0)
+    meany=torch.mean(torch.Tensor(data.X[0,1,:,i]))
     print(f"Theoretical----Epoch--{epoch}--Timestep-{i}: Varx--{torch.mean(varx)};Vary--{torch.mean(vary)};meanx--{meanx};meany--{meany}; Cov--{cov[0,1]}")
 
     varx_p=torch.var(sample[:,0],dim=0)
     vary_p=torch.var(sample[:,1],dim=0)
 
-    gauplot(sample,"Pred",i,0,epoch)  
+    dplot(sample,"Pred",i,0,epoch)  
 
     for j in range(1):
-        #Plot
-        # dplot(samples[j,:,:],"Pred",i,j)
-        #
         try:
             if abs(cov)<abs(torch.cov(sample[:,:].T)):
                 cov_p=torch.cov(sample[:,:].T)
@@ -201,10 +194,8 @@ for epoch in epochs:
     vary_l.append((vary_p-vary)*1000)
     meanx_l.append((meanx-meanx_p))
     meany_l.append((meany-meany_p))
-    print(meany)
-    print(meany_p)
     print(f"Pred----Epoch--{epoch}--Timestep-{i}: Varx--{torch.mean(varx_p)}; Vary--{torch.mean(vary_p)}; meanx--{meanx_p};meany--{meany_p}; Cov--{cov_p[0,1]}")
 
-  tabplot(varx_l, vary_l, meanx_l, meany_l, np.array(timehook)/100)
+  # tabplot(varx_l, vary_l, meanx_l, meany_l, np.array(timehook)/100)
 
 

@@ -14,19 +14,19 @@ K=[]
 for i in range(1,N+1):
   for j in range(i+1):
     K.append([j,i-j])
-K=[[1,1],[2,1],[1,2],[0,2],[2,0],[3,0],[0,3],[1,3],[3,1],[2,2],[0,4],[4,0]] # (14,2)
+K=[[1,1],[2,1],[1,2],[0,2],[2,0],[3,0],[0,3],[1,3],[3,1],[2,2],[0,4],[4,0]] # (14,2)  Remove Mean
 K = nn.Parameter(torch.Tensor(K)[:,None,None,:].repeat(1,5,100,1), requires_grad=False) # (output_dim, batchsize, num_points, x-y)
 
 
 ## 采样步数
-num_steps =  100 #@param {'type':'integer'}
+num_steps =  400 #@param {'type':'integer'}
 def Euler_Maruyama_sampler(score_model, 
                            init_x,
-                           drift,
+                           u,
                            mode,
-                           diffusivity, 
-                           batch_size=1, 
-                           num_steps=num_steps, 
+                           kappa, 
+                           batch_size, 
+                           timeseries, 
                            device='cuda', 
                            eps=1e-4):
   """Euler-Maruyama
@@ -42,44 +42,19 @@ def Euler_Maruyama_sampler(score_model,
   Returns:
     sample.    
   """
-  time_steps = torch.linspace(1-eps, eps, num_steps)
-  step_size = (time_steps[0] - time_steps[1])
+  step_size = torch.Tensor([timeseries[0] - timeseries[1]]).to(device)
   x=init_x.to(device)
+  u=u.to(device)
   samples=[]
   with torch.no_grad():
-    c=len(time_steps)
-    for time_step in time_steps: 
-      # print(c)
-      # Interplote the drift function. drfit with shape (batchsize, x-vel, y-vel, x-y), 128 grids on x \in [0,pi]
-      velx=[]
-      vely=[]
-      for i in range(x.shape[0]):
-        velxb=[]
-        velyb=[]
-        for j in range(x.shape[1]):
-          # print(x[i,j,0])
-          velxb.append(drift[i,c,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,0])
-          velyb.append(drift[i,c,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,1])
-          # velxb.append(0)
-          # velyb.append(0)
-        velx.append(velxb)
-        vely.append(velyb) 
-      vel=torch.cat([torch.Tensor(np.array(velx))[:,:,None],torch.Tensor(np.array(vely))[:,:,None]],dim=2).to(device) # [5,100,2]
-  
-      # Poiseuille flow
-      # vel=torch.cat([(1-x[:,:,1]**2)[:,:,None],(torch.zeros_like(x[:,:,0]))[:,:,None]],dim=-1).to(device)
-
+    c=len(timeseries)
+    for time_step in timeseries: 
       # Calculate the mean x
-      g = float(np.sqrt(2*diffusivity))
+      g = float(np.sqrt(2*kappa))
       score=score_model(x, time_step, mode)
-      # print(score[2,0])
-      mean_x = x + ((g**2) * score - vel) * step_size
-      x = mean_x + torch.sqrt(step_size) * g * torch.randn_like(x)  # Noise Term
-      # print(x[2,0])
-      # x = mean_x
-      samples.append(mean_x)
+      x = x + ((g**2) * score - u[:,c-1,:,:]) * step_size + torch.sqrt(step_size) * g * torch.randn_like(x)
+      samples.append(x)
       c=c-1
-
   return samples
 
 class GaussianFourierProjection(nn.Module):
@@ -101,7 +76,7 @@ def invariant(x):
   x=torch.pow(x,K) # [output_dim, batchsize, input_dim, 2]
   x=torch.sum(x[:,:,:,0]*x[:,:,:,1],dim=-1) # [output_dim, batchsize]
   x=x.permute(1,0)
-  x=torch.cat([x,x_mean[0,:,0,:]],dim=-1)
+  # x=torch.cat([x,x_mean[0,:,0,:]],dim=-1)
   return x
 
 
@@ -128,7 +103,7 @@ class InvarianceEncoding(nn.Module):
       x=torch.pow(x, self.K) # [output_dim, batchsize, input_dim, 2]
       x=torch.sum(x[:,:,:,0]*x[:,:,:,1],dim=-1) # [output_dim, batchsize] (32,5)
       x=x.permute(1,0)
-      x=torch.cat([x,x_mean[0,:,0,:]],dim=-1)
+      # x=torch.cat([x,x_mean[0,:,0,:]],dim=-1)
     elif mode=="Fourier":
       x=x*self.K  # [output_dim, batchsize, input_dim, 2]
       x=torch.sum(torch.cos(x[:,:,:,0]+x[:,:,:,1]),dim=-1) # [output_dim, batchsize]
@@ -145,7 +120,7 @@ class InvarianceEncoding(nn.Module):
 class ScoreNet_embedding(nn.Module):
   """Unet"""
  
-  def __init__(self, diff, i=14, h=64, o=128):
+  def __init__(self, diff, i=12, h=64, o=128):
     """.
     Args:
       diff: The diffusivity.
