@@ -121,7 +121,7 @@ np.random.seed(60)  # fixed 60
 # Data Setting
 datasize=5
 N_points=100
-kappa=0.002
+kappa=0.02
 time_series= np.arange(0, 1.0, 0.0025)
 data=Loader(datasize, N_points)
 data_loader = DataLoader(data, batch_size=batch_size, shuffle=True)
@@ -132,8 +132,8 @@ score_model = ScoreNet_embedding(diff=kappa)
 score_model = score_model.to(device)
 
 # Inference
-epochs=[20,30]
-timehook=[10,50,70,99, 200,300,399]
+epochs=[30,40]
+timehook=[10,50,70,100, 200,300,399]
 # timehook=[i+1 for i in range(98)]
 for epoch in epochs:
   varx_l=[]
@@ -149,10 +149,11 @@ for epoch in epochs:
   sample_batch_size = 5
   sampler = Euler_Maruyama_sampler 
 
+  # print(data.Vel)
   ## Generate samples using the specified sampler.
   samples = sampler(score_model,
                     torch.Tensor(data.X[:,:,:,-1]).permute(0,2,1),  # init data
-                    torch.Tensor(data.Ub+data.Up).permute(0,3,2,1),
+                    data.Vel,
                     mode,
                     kappa,
                     sample_batch_size, 

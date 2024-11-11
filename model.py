@@ -14,7 +14,7 @@ K=[]
 for i in range(1,N+1):
   for j in range(i+1):
     K.append([j,i-j])
-K=[[1,1],[2,1],[1,2],[0,2],[2,0],[3,0],[0,3],[1,3],[3,1],[2,2],[0,4],[4,0]] # (14,2)  Remove Mean
+K=[[1,1],[2,1],[1,2],[0,2],[2,0],[3,0],[0,3],[1,3],[3,1],[2,2]] # (14,2)  Remove Mean
 K = nn.Parameter(torch.Tensor(K)[:,None,None,:].repeat(1,5,100,1), requires_grad=False) # (output_dim, batchsize, num_points, x-y)
 
 
@@ -22,7 +22,7 @@ K = nn.Parameter(torch.Tensor(K)[:,None,None,:].repeat(1,5,100,1), requires_grad
 num_steps =  400 #@param {'type':'integer'}
 def Euler_Maruyama_sampler(score_model, 
                            init_x,
-                           u,
+                           vel,
                            mode,
                            kappa, 
                            batch_size, 
@@ -42,17 +42,40 @@ def Euler_Maruyama_sampler(score_model,
   Returns:
     sample.    
   """
-  step_size = torch.Tensor([timeseries[0] - timeseries[1]]).to(device)
+  U_rec = vel['U_rec']
+  V_rec = vel['V_rec']
+
+  vel=np.vstack([U_rec[None,:],V_rec[None,:]])
+  vel=np.array(vel).transpose(3,1,2,0)
   x=init_x.to(device)
-  u=u.to(device)
+  vel=torch.Tensor(vel).to(device)
+
+  step_size = torch.Tensor([timeseries[0] - timeseries[1]]).to(device)
+  # print(step_size)
+
   samples=[]
   with torch.no_grad():
     c=len(timeseries)
     for time_step in timeseries: 
+
+      velx=[]
+      vely=[]
+      for i in range(x.shape[0]):
+        velxb=[]
+        velyb=[]
+        for j in range(x.shape[1]):
+          # velxb.append(drift[i,int(x[i,j,0]/(np.pi/128)),int(x[i,j,1]/(np.pi/128)),0])
+          # velyb.append(drift[i,int(x[i,j,0]/(np.pi/128)),int(x[i,j,1]/(np.pi/128)),1])
+          velxb.append(vel[i,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,0])
+          velyb.append(vel[i,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,1])
+        velx.append(velxb)
+        vely.append(velyb) 
+      velocity=torch.cat([torch.Tensor(velx)[:,:,None],torch.Tensor(vely)[:,:,None]],dim=2).to(device) # [5,100,2]
+
       # Calculate the mean x
       g = float(np.sqrt(2*kappa))
       score=score_model(x, time_step, mode)
-      x = x + ((g**2) * score - u[:,c-1,:,:]) * step_size + torch.sqrt(step_size) * g * torch.randn_like(x)
+      x = x + ((g**2) * score - velocity) * step_size + torch.sqrt(step_size) * g * torch.randn_like(x)
       samples.append(x)
       c=c-1
   return samples
@@ -71,8 +94,8 @@ class GaussianFourierProjection(nn.Module):
 
 def invariant(x):
   x_mean=torch.mean(x,dim=1)[None, :, None, :] #[1, batchsize, 1, 2]
-  x=x[None,:,:,:].repeat(12, 1, 1,1) # (32,5,40,2)
-  x=x-x_mean.repeat(12, 1, x.shape[2],1) #[output_dim, batchsize, input_dim, 2]
+  x=x[None,:,:,:].repeat(10, 1, 1,1) # (32,5,40,2)
+  x=x-x_mean.repeat(10, 1, x.shape[2],1) #[output_dim, batchsize, input_dim, 2]
   x=torch.pow(x,K) # [output_dim, batchsize, input_dim, 2]
   x=torch.sum(x[:,:,:,0]*x[:,:,:,1],dim=-1) # [output_dim, batchsize]
   x=x.permute(1,0)
@@ -84,7 +107,7 @@ class InvarianceEncoding(nn.Module):
   """
   Permutation Invariance Embedding
   """
-  def __init__(self, batchsize=5, input_dim=40, output_dim=14, scale=1):
+  def __init__(self, batchsize=5, input_dim=40, output_dim=12, scale=1):
     super().__init__()
     self.od=output_dim
     self.bs=batchsize
@@ -120,7 +143,7 @@ class InvarianceEncoding(nn.Module):
 class ScoreNet_embedding(nn.Module):
   """Unet"""
  
-  def __init__(self, diff, i=12, h=64, o=128):
+  def __init__(self, diff, i=10, h=64, o=128):
     """.
     Args:
       diff: The diffusivity.

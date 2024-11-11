@@ -20,7 +20,8 @@ class Loader(Dataset):
         self.Up=[]
         self.Ub=[]
         for i in range(datasize):
-            data=sio.loadmat(f"/home/junhao/CVPR25/Velocity/dt0p01_T4_kappa0p002_1000_samples_FHIT_velo_1_source_{i+1}.mat")
+            data=sio.loadmat(f"/home/junhao/CVPR25/Velocity/dt0p01_T4_kappa0p2_1000_samples_FHIT_velo_1_source_{1}.mat")
+            self.Vel=sio.loadmat(f"/home/junhao/CVPR25/Velocity/recordinguv{1}.mat")
             index=np.random.randint(1,1001,size=N_points)
             self.X.append(data["X"][:,index,:])
             self.Up.append(data["Up"][:,index,:])
