@@ -6,27 +6,27 @@ import numpy as np
 import torch.nn as nn
 from torch.autograd.functional import jacobian
 
-
-torch.manual_seed(42)
-device = 'cuda' #@param ['cuda', 'cpu'] {'type':'string'}
-N=3
-K=[]
-for i in range(1,N+1):
-  for j in range(i+1):
-    K.append([j,i-j])
-K=[[1,1],[2,1],[1,2],[0,2],[2,0],[3,0],[0,3],[1,3],[3,1],[2,2]] # (14,2)  Remove Mean
-K = nn.Parameter(torch.Tensor(K)[:,None,None,:].repeat(1,5,100,1), requires_grad=False) # (output_dim, batchsize, num_points, x-y)
+device="cuda"
+# N=3
+# K=[]
+# for i in range(1,N+1):
+#   for j in range(i+1):
+#     K.append([j,i-j])
+# K=[[1,1],[2,1],[1,2],[0,2],[2,0],[3,0],[0,3],[1,3],[3,1],[2,2]] # (12,2)
+# tK=K
+# K = nn.Parameter(torch.Tensor(K)[:,None,None,:].repeat(1,30,100,1), requires_grad=False) # (output_dim, batchsize, num_points, x-y)
 
 
 ## 采样步数
-num_steps =  400 #@param {'type':'integer'}
+num_steps =  100 #@param {'type':'integer'}
 def Euler_Maruyama_sampler(score_model, 
                            init_x,
-                           vel,
+                           drift,
                            mode,
                            kappa, 
-                           batch_size, 
-                           timeseries, 
+                           case,
+                           batch_size=1, 
+                           num_steps=num_steps, 
                            device='cuda', 
                            eps=1e-4):
   """Euler-Maruyama
@@ -42,41 +42,35 @@ def Euler_Maruyama_sampler(score_model,
   Returns:
     sample.    
   """
-  U_rec = vel['U_rec']
-  V_rec = vel['V_rec']
-
-  vel=np.vstack([U_rec[None,:],V_rec[None,:]])
-  vel=np.array(vel).transpose(3,1,2,0)
+  time_steps = torch.linspace(1-eps, eps, num_steps)
+  step_size = (time_steps[0] - time_steps[1])
   x=init_x.to(device)
-  vel=torch.Tensor(vel).to(device)
-
-  step_size = torch.Tensor([timeseries[0] - timeseries[1]]).to(device)
-  # print(step_size)
-
   samples=[]
   with torch.no_grad():
-    c=len(timeseries)
-    for time_step in timeseries: 
-
+    c=len(time_steps)
+    for time_step in time_steps: 
+      # Interplote the drift function. drfit with shape (batchsize, x-vel, y-vel, x-y), 128 grids on x \in [0,pi]
       velx=[]
       vely=[]
       for i in range(x.shape[0]):
         velxb=[]
         velyb=[]
         for j in range(x.shape[1]):
-          # velxb.append(drift[i,int(x[i,j,0]/(np.pi/128)),int(x[i,j,1]/(np.pi/128)),0])
-          # velyb.append(drift[i,int(x[i,j,0]/(np.pi/128)),int(x[i,j,1]/(np.pi/128)),1])
-          velxb.append(vel[i,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,0])
-          velyb.append(vel[i,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,1])
+          velxb.append(drift[i,c,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,0])
+          velyb.append(drift[i,c,int((x[i,j,0]/(np.pi/128)))%128,int((x[i,j,1]/(np.pi/128)))%128,1])
         velx.append(velxb)
         vely.append(velyb) 
-      velocity=torch.cat([torch.Tensor(velx)[:,:,None],torch.Tensor(vely)[:,:,None]],dim=2).to(device) # [5,100,2]
+      vel=torch.cat([torch.Tensor(np.array(velx))[:,:,None],torch.Tensor(np.array(vely))[:,:,None]],dim=2).to(device) # [5,100,2]
+      # Poiseuille flow
+      if case=="Poi":
+        vel=torch.cat([(1-x[:,:,1]**2)[:,:,None],(torch.zeros_like(x[:,:,0]))[:,:,None]],dim=-1).to(device)
 
       # Calculate the mean x
       g = float(np.sqrt(2*kappa))
       score=score_model(x, time_step, mode)
-      x = x + ((g**2) * score - velocity) * step_size + torch.sqrt(step_size) * g * torch.randn_like(x)
-      samples.append(x)
+      mean_x = x + ((g**2) * score - vel) * step_size
+      x = mean_x + torch.sqrt(step_size) * g * torch.randn_like(x)  # Noise Term
+      samples.append(mean_x)
       c=c-1
   return samples
 
@@ -93,10 +87,13 @@ class GaussianFourierProjection(nn.Module):
 
 
 def invariant(x):
+  K=[[1,1],[2,1],[1,2],[0,2],[2,0],[3,0],[0,3],[1,3],[3,1],[2,2]] # (12,2)
   x_mean=torch.mean(x,dim=1)[None, :, None, :] #[1, batchsize, 1, 2]
   x=x[None,:,:,:].repeat(10, 1, 1,1) # (32,5,40,2)
   x=x-x_mean.repeat(10, 1, x.shape[2],1) #[output_dim, batchsize, input_dim, 2]
-  x=torch.pow(x,K) # [output_dim, batchsize, input_dim, 2]
+  tK = nn.Parameter(torch.Tensor(K)[:,None,None,:].repeat(1,x.shape[1],x.shape[2],1), requires_grad=False) # (output_dim, batchsize, num_points, x-y)
+  tK=tK.to(device)
+  x=torch.pow(x,tK) # [output_dim, batchsize, input_dim, 2]
   x=torch.sum(x[:,:,:,0]*x[:,:,:,1],dim=-1) # [output_dim, batchsize]
   x=x.permute(1,0)
   # x=torch.cat([x,x_mean[0,:,0,:]],dim=-1)
@@ -111,7 +108,6 @@ class InvarianceEncoding(nn.Module):
     super().__init__()
     self.od=output_dim
     self.bs=batchsize
-    self.K = K
 
   def forward(self, x, mode):
     """
@@ -119,25 +115,34 @@ class InvarianceEncoding(nn.Module):
       x:Input with shape [batchsize, input_dim, 2]  (5,40,2)
       mode: Fourier or Moment
     """
+    K=[[1,1],[2,1],[1,2],[0,2],[2,0],[3,0],[0,3],[1,3],[3,1],[2,2]] # (12,2)
     x_mean=torch.mean(x,dim=1)[None, :, None, :] #[1, batchsize, 1, 2]
     x=x[None,:,:,:].repeat(self.od-2, 1, 1,1) # (32,5,40,2)
     x=x-x_mean.repeat(self.od-2, 1, x.shape[2],1) #[output_dim, batchsize, input_dim, 2]
+    M = nn.Parameter(torch.Tensor(K)[:,None,None,:].repeat(1,x.shape[1],x.shape[2],1), requires_grad=False) # (output_dim, batchsize, num_points, x-y)
+    M=M.to(device)
     if mode=="Moment":
-      x=torch.pow(x, self.K) # [output_dim, batchsize, input_dim, 2]
+      x=torch.pow(x, M) # [output_dim, batchsize, input_dim, 2]
       x=torch.sum(x[:,:,:,0]*x[:,:,:,1],dim=-1) # [output_dim, batchsize] (32,5)
       x=x.permute(1,0)
       # x=torch.cat([x,x_mean[0,:,0,:]],dim=-1)
     elif mode=="Fourier":
-      x=x*self.K  # [output_dim, batchsize, input_dim, 2]
+      x=x*M  # [output_dim, batchsize, input_dim, 2]
       x=torch.sum(torch.cos(x[:,:,:,0]+x[:,:,:,1]),dim=-1) # [output_dim, batchsize]
       x=x.permute(1,0)
     return x
 
   def reverse(self, x):
     jac = jacobian(invariant, x) # [5, 32, 5, 40, 2]*[5,40]
-    jac=torch.cat([jac[None,0,:,0,:,:],jac[None,1,:,1,:,:],jac[None,2,:,2,:,:],jac[None,3,:,3,:,:],jac[None,4,:,4,:,:]],dim=0)
-    # print(jac.shape) # (5,32,40,2)
-    return jac
+    batch=len(jac)
+    for i in range(batch):
+      try:
+        out=torch.cat([out,jac[i,:,i,:,:][None,:,:,:]],dim=0)
+      except:
+        out=jac[i,:,i,:,:][None,:,:,:]
+      # jac=torch.cat([jac[None,0,:,0,:,:],jac[None,1,:,1,:,:],jac[None,2,:,2,:,:],jac[None,3,:,3,:,:],jac[None,4,:,4,:,:]],dim=0)
+    # print(out.shape) # (5,32,40,2)
+    return out
   
 
 class ScoreNet_embedding(nn.Module):
@@ -178,8 +183,6 @@ class ScoreNet_embedding(nn.Module):
     m=self.sym(x, mode)  #(5,32)
     h=self.linear_model1(m)
     h=self.linear_model2(h+self.embed(t).repeat(m.shape[0],1))/np.sqrt(self.diff*t)
-    # h=self.linear_model2(h)/np.sqrt(self.diff*t)
-    # print(h.shape) # (5,32)
     h=h[:,None,:]
     jac=self.sym.reverse(x) # (5,32,40,2)
     out=torch.zeros(jac.shape[0],jac.shape[2],jac.shape[-1]).to(device)

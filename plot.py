@@ -21,28 +21,49 @@ cmap_name="c"
 cmap=LinearSegmentedColormap.from_list(cmap_name,colors)
 
 def tabplot(array1, array2, array3, array4, time):
-  fig, axs = plt.subplots(4, 1, figsize=(8, 10))  
+  # print(array1.shape)
+  fig, axs = plt.subplots(4, 1, figsize=(8, 10)) 
+  # plt.tick_params(axis='both', width=3) 
 
-  axs[0].plot(time, array1, color='r')  
-  axs[0].set_title('Variance-X Error')  
-  axs[0].set_ylabel(r"$1e3 \times \Delta Var_x$")
-  axs[0].set_xlabel("Time")
+  # axs[0].plot(time, array1, color='r')  
+  # axs[0].set_title(r'$\mathcal{E}_{\sigma_X^2}$',fontdict={'weight': 'bold', "size":18})  
+  axs[0].set_ylabel(r"$10^3 \times \mathcal{E}_{\sigma_X^2}$",fontdict={"size":18})
+  axs[0].set_xlabel("t",fontdict={"size":18})
+  axs[0].plot(time,np.mean(array1,axis=1),color="r",lw=3)
 
-  axs[1].plot(time, array2, color='g')
-  axs[1].set_title('Variance-Y Error')
-  axs[1].set_ylabel(r"$1e3 \times \Delta Var_y$")
-  axs[1].set_xlabel("Time")
+  max=np.max(array1,axis=1)
+  min=np.min(array1,axis=1)
+  axs[0].fill_between(time,min,max, color='gray', alpha=0.5)
 
-  axs[2].plot(time, array3, color='b')
-  axs[2].set_title('Mean-X Error')
-  axs[2].set_ylabel(r"$\Delta Mean_x$")
-  axs[2].set_xlabel("Time")
+  # axs[1].plot(time, array2, color='g')
+  # axs[1].set_title(r'$\mathcal{E}_{\sigma_Y^2}$',fontdict={'weight': 'bold',"size":18})
+  axs[1].set_ylabel(r"$10^3 \times \mathcal{E}_{\sigma_Y^2}$",fontdict={"size":18})
+  axs[1].set_xlabel("t",fontdict={'size':18})
+  axs[1].plot(time,np.mean(array2,axis=1),color="g",lw=3)
 
-  axs[3].plot(time, array4, color='y')
-  axs[3].set_title('Mean-Y Error')
-  axs[3].set_ylabel(r"$\Delta Mean_y$")
-  axs[3].set_xlabel("Time")
+  max=np.max(array2,axis=1)
+  min=np.min(array2,axis=1)
+  axs[1].fill_between(time,min,max, color='gray', alpha=0.5)
 
+  # axs[2].plot(time, array3, color='white')
+  # axs[2].set_title(r'$\mathcal{E}_{\overline{X}}$',fontdict={'weight': 'bold',"size":18})
+  axs[2].set_ylabel(r"$\mathcal{E}_{\overline{X}}$",fontdict={"size":18})
+  axs[2].set_xlabel("t",fontdict={"size":18})
+  axs[2].plot(time,np.mean(array3,axis=1),color="b",lw=3)
+
+  max=np.max(array2,axis=1)
+  min=np.min(array2,axis=1)
+  axs[2].fill_between(time,min,max, color='gray', alpha=0.5)
+
+  # axs[3].plot(time, array4, color='y')
+  # axs[3].set_title(r'$\mathcal{E}_{\overline{Y}}$',fontdict={'weight': 'bold',"size":18})
+  axs[3].set_ylabel(r"$\mathcal{E}_{\overline{Y}}$",fontdict={"size":18})
+  axs[3].set_xlabel("t",fontdict={"size":18})
+  axs[3].plot(time,np.mean(array4,axis=1),color="y",lw=3)
+
+  max=np.max(array4,axis=1)
+  min=np.min(array4,axis=1)
+  axs[3].fill_between(time,min,max, color='gray', alpha=0.5)
   plt.tight_layout()
   plt.show()
    
@@ -57,15 +78,12 @@ def dplot(df,mode,time,batch,epoch):
   df=np.array(df)
   x=df[:,0]
   y=df[:,1]
-  # print(np.max(x))
-  # print(np.min(x))
-  # print(np.max(y))
-  # print(np.min(y))
+
   # plt.scatter(df[:, 0], df[:, 1], s=10, c='blue', label='Data')
   # x, y = np.mgrid[mean[0]-3*np.sqrt(cov[0,0]):mean[0]+3*np.sqrt(cov[0,0]):.01, 
   #                 mean[1]-3*np.sqrt(cov[1,1]):mean[1]+3*np.sqrt(cov[1,1]):.01]
   # xx, yy = np.mgrid[-2.3:0.3:.05,-1.5:1.5:.05]
-  xx, yy = np.mgrid[1:3:.05,3:6:.05]
+  xx, yy = np.mgrid[1:2.0:.05,1:2.0:.05]
   positions = np.vstack([xx.ravel(), yy.ravel()])
   values = np.vstack([x, y])
   kernel = gaussian_kde(values)
@@ -110,93 +128,93 @@ def gauplot(df,mode,time,batch,epoch):
   plt.close()
 
 
-device = 'cuda' #@param ['cuda', 'cpu'] {'type':'string'}
+# device = 'cuda' #@param ['cuda', 'cpu'] {'type':'string'}
 
-# Train Setting
-batch_size =  5 #@param {'type':'integer'}
-mode="Moment"
-np.random.seed(60)  # fixed 60
-
-
-# Data Setting
-datasize=5
-N_points=100
-kappa=0.02
-time_series= np.arange(0, 1.0, 0.0025)
-data=Loader(datasize, N_points)
-data_loader = DataLoader(data, batch_size=batch_size, shuffle=True)
+# # Train Setting
+# batch_size =  5 #@param {'type':'integer'}
+# mode="Moment"
+# np.random.seed(60)  # fixed 60
 
 
-# Model
-score_model = ScoreNet_embedding(diff=kappa)
-score_model = score_model.to(device)
+# # Data Setting
+# case="Vel"
+# datasize=5
+# N_points=100
+# kappa=0.001
+# time_series= np.arange(0, 1.01, 0.01)
+# # shift = [-np.pi / 2, -np.pi / 2]
+# shift = [0,0]
+# data=Loader(datasize, N_points, kappa, time_series, shift, case)
+# data_loader = DataLoader(data, batch_size=batch_size, shuffle=True)
 
-# Inference
-epochs=[30,40]
-timehook=[10,50,70,100, 200,300,399]
-# timehook=[i+1 for i in range(98)]
-for epoch in epochs:
-  varx_l=[]
-  vary_l=[]
-  meanx_l=[]
-  meany_l=[]
+# # Model
+# score_model = ScoreNet_embedding(diff=kappa)
+# score_model = score_model.to(device)
+# sampler = Euler_Maruyama_sampler 
+# sample_batch_size = 5
+
+# # Inference
+# epochs=[20,30,40,50,60]
+# timehook=[1,10,50,70,99]
+# # timehook=[i+1 for i in range(98)]
+# for epoch in epochs:
+#   varx_l=[]
+#   vary_l=[]
+#   meanx_l=[]
+#   meany_l=[]
   
-  path=f"PDF/100/lr3_Vel_e{epoch}/"
-  os.makedirs(path,exist_ok=True)
-  ckpt = torch.load(f'ckpt/100/1e-3-Vel/ckpt_{epoch}.pth', map_location=device)
-  # ckpt = torch.load('/home/junhao/CVPR25/ckpt/Gaussian-lr1e-3-epoch20.pth',map_location=device)
-  score_model.load_state_dict(ckpt)
-  sample_batch_size = 5
-  sampler = Euler_Maruyama_sampler 
+#   path=f"PDF/100/lr3_Vel_e{epoch}/"
+#   os.makedirs(path,exist_ok=True)
+#   ckpt = torch.load(f'ckpt/100/1e-3-Vel/ckpt_{epoch}.pth', map_location=device)
+#   score_model.load_state_dict(ckpt)
 
-  # print(data.Vel)
-  ## Generate samples using the specified sampler.
-  samples = sampler(score_model,
-                    torch.Tensor(data.X[:,:,:,-1]).permute(0,2,1),  # init data
-                    data.Vel,
-                    mode,
-                    kappa,
-                    sample_batch_size, 
-                    time_series[::-1],
-                    device=device)
-  # samples=samples_1
-  for i in timehook:
-    sample=samples[-i][0,:,:].cpu()
-    # 计算Variance, Mean, Covariance
-    varx=torch.var(torch.Tensor(data.X[0,0,:,i]),dim=0)  
-    dplot(data.X[0,:,:,i].T,"Theor",i,0,epoch)  
+#   ## Generate samples using the specified sampler.
+#   samples = sampler(score_model,
+#                     torch.Tensor(data.data[:,-1,:,:]),  # init data
+#                     data.vel,
+#                     mode,
+#                     kappa,
+#                     case,
+#                     sample_batch_size, 
+#                     device=device)
+#   # samples=samples_1
+#   for i in timehook:
+#     sample=samples[-i][0,:,:].cpu()
+#     # 计算Variance, Mean, Covariance
+#     varx=torch.var(torch.Tensor(data.data[0,i,:,0]),dim=0)  
+#     dplot(data.data[0,i,:,:],"Theor",i,0,epoch)  
 
-    for j in range(len(data)):
-      try:
-        if abs(cov)<abs(torch.cov(torch.Tensor(data.X[j,:,:,i].T))):
-          cov=torch.cov(torch.Tensor(data.X[j,:,:,i].T))
-      except:
-        cov=torch.cov(torch.Tensor(data.X[j,:,:,i].T))
-    meanx=torch.mean(torch.Tensor(data.X[0,0,:,i]))
-    vary=torch.var(torch.Tensor(data.X[0,1,:,i]),dim=0)
-    meany=torch.mean(torch.Tensor(data.X[0,1,:,i]))
-    print(f"Theoretical----Epoch--{epoch}--Timestep-{i}: Varx--{torch.mean(varx)};Vary--{torch.mean(vary)};meanx--{meanx};meany--{meany}; Cov--{cov[0,1]}")
+#     for j in range(len(data)):
+#       try:
+#         if abs(cov)<abs(torch.cov(torch.Tensor(data.data[j,i,:,:].T))):
+#           cov=torch.cov(torch.Tensor(data.data[j,i,:,:].T))
+#       except:
+#         cov=torch.cov(torch.Tensor(data.data[j,i,:,:].T))
+#     meanx=torch.mean(torch.Tensor(data.data[0,i,:,0]))
+#     vary=torch.var(torch.Tensor(data.data[0,i,:,1]),dim=0)
+#     meany=torch.mean(torch.Tensor(data.data[0,i,:,1]))
+#     print(f"Theoretical----Epoch--{epoch}--Timestep-{i}: Varx--{torch.mean(varx)};Vary--{torch.mean(vary)};meanx--{meanx};meany--{meany}; Cov--{cov[0,1]}")
 
-    varx_p=torch.var(sample[:,0],dim=0)
-    vary_p=torch.var(sample[:,1],dim=0)
+#     varx_p=torch.var(sample[:,0],dim=0)
+#     vary_p=torch.var(sample[:,1],dim=0)
 
-    dplot(sample,"Pred",i,0,epoch)  
+#     dplot(sample,"Pred",i,0,epoch)  
 
-    for j in range(1):
-        try:
-            if abs(cov)<abs(torch.cov(sample[:,:].T)):
-                cov_p=torch.cov(sample[:,:].T)
-        except:
-            cov_p=torch.cov(sample[:,:].T)
-    meanx_p=torch.mean(sample[:,0])
-    meany_p=torch.mean(sample[:,1])
+#     for j in range(1):
+#         try:
+#             if abs(cov)<abs(torch.cov(sample[:,:].T)):
+#                 cov_p=torch.cov(sample[:,:].T)
+#         except:
+#             cov_p=torch.cov(sample[:,:].T)
+#     meanx_p=torch.mean(sample[:,0])
+#     meany_p=torch.mean(sample[:,1])
 
-    varx_l.append((varx_p-varx)*1000)
-    vary_l.append((vary_p-vary)*1000)
-    meanx_l.append((meanx-meanx_p))
-    meany_l.append((meany-meany_p))
-    print(f"Pred----Epoch--{epoch}--Timestep-{i}: Varx--{torch.mean(varx_p)}; Vary--{torch.mean(vary_p)}; meanx--{meanx_p};meany--{meany_p}; Cov--{cov_p[0,1]}")
+#     varx_l.append((varx_p-varx)*1000)
+#     vary_l.append((vary_p-vary)*1000)
+#     meanx_l.append((meanx-meanx_p))
+#     meany_l.append((meany-meany_p))
+#     print(f"Pred----Epoch--{epoch}--Timestep-{i}: Varx--{torch.mean(varx_p)}; Vary--{torch.mean(vary_p)}; meanx--{meanx_p};meany--{meany_p}; Cov--{cov_p[0,1]}")
 
-  # tabplot(varx_l, vary_l, meanx_l, meany_l, np.array(timehook)/100)
+#   # tabplot(varx_l, vary_l, meanx_l, meany_l, np.array(timehook)/100)
 
 
