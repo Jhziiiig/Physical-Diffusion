@@ -26,7 +26,7 @@ np.random.seed(42)
 torch.manual_seed(0)
 
 # Train Setting
-n_epochs =  0
+n_epochs =  100
 batch_size =  5 
 lr=1e-3
 mode="Moment"
@@ -34,7 +34,7 @@ mode="Moment"
 # Data Setting
 case="Vel"
 datasize=70 # 70
-N_points=100 # 100
+N_points=100 # 10,100,1000
 kapa=0.001
 time_series= np.arange(0, 1.01, 0.01)
 delta_t=torch.tensor([time_series[1]-time_series[0]]).to(device)
@@ -48,7 +48,7 @@ score_model = ScoreNet_embedding(diff=kapa)
 score_model = score_model.to(device)
 optimizer = Adam(score_model.parameters(), lr=lr)
 
-os.makedirs("ckpt/100/1e-3-Vel",exist_ok=True)
+os.makedirs(f"ckpt/100/1e-3-Vel-P{N_points}",exist_ok=True)
 
 # Training
 
@@ -71,7 +71,7 @@ for epoch in range(n_epochs):
       avg_loss += loss.item() * x.shape[0]
       num_items += x.shape[0]
   print('Average Loss: {:9f}'.format(avg_loss / x.shape[1]*num_items))
-  torch.save(score_model.state_dict(), f'ckpt/100/1e-3-Vel/ckpt_{epoch+1}.pth')
+  torch.save(score_model.state_dict(), f'ckpt/100/1e-3-Vel-P{N_points}/ckpt_{epoch+1}.pth')
 
 
 end_time = time.time()
